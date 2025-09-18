@@ -1,0 +1,142 @@
+---
+
+title: "Untitled"
+author: "AL"
+date: "2025-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(RSQLite)
+library(dbplyr)
+library(scales)
+library(slider)
+library(furrr)
+library(broom)
+library(lmtest)
+library(rlang)
+db_path <- "/home/shared/data/tidy_finance.sqlite"
+```
+
+
+
+```{r}
+tidy_finance <- dbConnect(
+  SQLite(),
+  db_path,
+  extended_types = TRUE
+)
+
+```
+
+```{r}
+dbListTables(tidy_finance)
+```
+
+
+```{r}
+crsp_daily_raw <- tbl(tidy_finance, "crsp_daily")
+```
+
+
+```{r}
+crsp_monthly <- tbl(tidy_finance, "crsp_monthly") |>
+ # select(permno, date, industry, ret_excess) |>
+  collect()
+```
+
+### Column Explanations
+
+| Column        | Type     | Meaning |
+|---------------|----------|--------|
+| `permno`      | `<dbl>`  | **Permanent Number** — unique stock identifier assigned by CRSP. |
+| `date`        | `<date>` | **Date** — monthly date for the return data (e.g., end-of-month). |
+| `ret`         | `<dbl>`  | **Return** — raw return for the stock over the month (includes dividends). |
+| `shrout`      | `<dbl>`  | **Shares Outstanding** — number of shares (in thousands) at month-end. |
+| `prc`         | `<dbl>`  | **Price** — closing price at month-end (usually signed to indicate bid/ask). |
+| `primaryexch` | `<chr>`  | **Primary Exchange** — exchange where the stock is primarily traded (e.g., NYSE, NASDAQ). |
+| `siccd`       | `<int>`  | **SIC Code** — Standard Industrial Classification code identifying industry. |
+| `mktcap`      | `<dbl>`  | **Market Capitalization** — computed as `prc * shrout` (in dollars). |
+| `mktcap_lag`  | `<dbl>`  | **Lagged Market Cap** — market cap from the previous period (for predictive sorting). |
+| `exchange`    | `<chr>`  | **Exchange Code or Label** — similar to `primaryexch`, may differ by format. |
+| `industry`    | `<chr>`  | **Industry Category** — human-readable industry classification. |
+| `ret_excess`  | `<dbl>`  | **Excess Return** — return minus risk-free rate (monthly excess return). |
+| `gvkey`       | `<chr>`  | **Global Company Key** — unique firm identifier from Compustat (joins with fundamentals). |
+
+---
+
+### Summary
+
+This is a cleaned and enriched monthly CRSP dataset with stock returns, pricing info, market cap, and industry mappings. It’s commonly used for asset pricing research and factor model estimation.
+
+Would you like a code snippet to explore or summarize
+
+
+```{r}
+names_tbl <- tbl(tidy_finance, "stksecurityinfohist") %>%
+  select(permno, securitynm) %>%
+  distinct()
+
+crsp_named <- tbl(tidy_finance, "crsp_monthly") %>%
+  inner_join(names_tbl, by = "permno") %>%
+  select(permno, date, securitynm, ret_excess) %>%
+  collect()
+
+
+```
+
+
+
+```{r}
+names_tbl <- tbl(tidy_finance, "stksecurityinfohist") %>%
+  select(permno, securitynm, securitytype, ticker, tradingsymbol) %>%
+  distinct()
+
+crsp_daily_named <- tbl(tidy_finance, "crsp_daily") %>%
+  left_join(names_tbl, by = "permno") %>%
+  collect()
+
+
+crsp_monthly_named <- tbl(tidy_finance, "crsp_monthly") %>%
+  left_join(names_tbl, by = "permno") %>%
+  collect()
+
+
+```
+
+
+```{r}
+write.table(crsp_daily_named, "crsp_daily_named.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(crsp_monthly_named, "crsp_monthly_named.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,26 @@
+# Ignore data text files
+data/crsp_daily_named.txt
+data/crsp_monthly_named.txt
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# R-related
+.Rhistory
+.RData
+.Rproj.user/
+.Ruserdata
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# macOS system files
+.DS_Store
+
+# Virtual environments
+.venv/
+env/
+venv/
+
