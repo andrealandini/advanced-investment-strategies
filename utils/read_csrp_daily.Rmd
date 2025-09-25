@@ -1,0 +1,108 @@
+---
+title: "read_crsp_daily"
+author: "AL"
+date: "2025-09-25"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+```
+
+
+
+```{r}
+# Daily
+daily_path <- file.path("..", "data", "crsp_daily_named.txt")
+crsp_daily <- read_tsv(daily_path)
+glimpse(crsp_daily)
+
+# Monthly
+monthly_path <- file.path("..", "data", "crsp_monthly_named.txt")
+crsp_monthly <- read_tsv(monthly_path)
+glimpse(crsp_monthly)
+
+```
+
+
+```{r}
+library(dplyr)
+
+top500 <- crsp_monthly %>%
+  group_by(permno) %>%
+  filter(date == max(date, na.rm = TRUE)) %>%   # keep only the last date per permno
+  summarise(
+    last_date = max(date, na.rm = TRUE),
+    last_mktcap = last(mktcap),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(last_mktcap)) %>%
+  slice_head(n = 500)
+
+head(top500, 10)
+
+
+```
+
+```{r}
+library(dplyr)
+
+# Make sure no duplicates in top500 permno
+top500_permnos <- unique(top500$permno)
+
+# Filter daily CRSP data for only those permnos
+crsp_daily_top500 <- crsp_daily %>%
+  filter(permno %in% top500_permnos)
+
+glimpse(crsp_daily_top500)
+
+```
+
+
+
+```{r}
+library(readr)
+
+# Save crsp_daily_top500
+write_tsv(crsp_daily_top500,
+          file.path("..", "data", "crsp_daily_top500.txt"))
+
+# Save top500 (monthly snapshot)
+write_tsv(top500,
+          file.path("..", "data", "crsp_top500.txt"))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
