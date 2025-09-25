@@ -1,6 +1,5 @@
 # Ignore data text files
-data/crsp_daily_named.txt
-data/crsp_monthly_named.txt
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
