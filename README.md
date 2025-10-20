@@ -146,4 +146,3 @@ The project demonstrates that:
 ---
 
 *Last updated: Winter Semester 2025*
-```
