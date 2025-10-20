@@ -1,4 +1,3 @@
-```markdown
 # Advanced Investment Strategies
 
 **Winter Semester 2025**  
