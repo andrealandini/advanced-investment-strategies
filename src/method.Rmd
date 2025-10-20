@@ -1,0 +1,202 @@
+---
+title: "Uncertainty Analysis: Volatility and Entropy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r load-packages}
+library(dplyr)
+library(readr)
+library(purrr)
+library(ggplot2)
+library(lubridate)
+```
+
+## Load and Prepare Data
+
+```{r load-data}
+# Load CRSP daily data
+df <- read_tsv("../data/crsp_daily_top500.txt")
+
+# Sort by firm and date
+df <- df %>%
+  arrange(permno, date) %>%
+  mutate(date = as.Date(date))
+```
+
+## Uncertainty as Historical Volatility
+
+```{r volatility-features}
+# Helper function for rolling skewness
+rolling_skew <- function(x) {
+  if (length(x) < 3 || sd(x, na.rm = TRUE) == 0) {
+    return(NA_real_)
+  }
+  m <- mean(x, na.rm = TRUE)
+  s <- sd(x, na.rm = TRUE)
+  mean(((x - m) / s)^3, na.rm = TRUE)
+}
+
+# Function to create features for each firm
+make_features <- function(group) {
+  group <- group %>% arrange(date)
+  
+  # Create lagged returns
+  for (i in 1:5) {
+    group[[paste0("ret_lag", i)]] <- lag(group$ret, i)
+  }
+  group$ret_excess_lag1 <- lag(group$ret_excess, 1)
+  
+  # Rolling features (past 20 days)
+  group <- group %>%
+    mutate(
+      skew_20d = rollapply(ret, width = 20, FUN = rolling_skew, 
+                          fill = NA, align = "right", partial = FALSE),
+      mean_20d = rollapply(ret, width = 20, FUN = mean, 
+                          na.rm = TRUE, fill = NA, align = "right"),
+      sd_20d = rollapply(ret, width = 20, FUN = sd, 
+                        na.rm = TRUE, fill = NA, align = "right")
+    )
+  
+  # Target: future 20-day volatility (forward-looking window)
+  group <- group %>%
+    mutate(
+      vol_20d_forward = rollapply(lead(ret, 19), width = 20, FUN = sd, 
+                                 na.rm = TRUE, fill = NA, align = "left")
+    )
+  
+  return(group)
+}
+
+# Apply to all firms
+df_features <- df %>%
+  group_by(permno) %>%
+  group_modify(~ make_features(.x)) %>%
+  ungroup() %>%
+  drop_na()
+
+# Save features
+write_tsv(df_features, "../data/crsp_features_full0.txt")
+```
+
+## Uncertainty as Entropy
+
+```{r entropy-features}
+# Rolling Shannon entropy helper
+rolling_entropy <- function(x, bins = 20) {
+  if (length(x) < 2 || all(is.na(x))) return(NA_real_)
+  
+  x_clean <- na.omit(x)
+  if (length(x_clean) < 2) return(NA_real_)
+  
+  # Create histogram
+  hist_data <- hist(x_clean, breaks = bins, plot = FALSE)
+  probs <- hist_data$counts / sum(hist_data$counts)
+  probs <- probs[probs > 0]  # remove zeros
+  
+  # Calculate Shannon entropy (base 2 for bits)
+  -sum(probs * log2(probs))
+}
+
+# Function to create entropy-based features
+make_entropy_features <- function(group) {
+  group <- group %>% arrange(date)
+  
+  # Past return lags
+  for (i in 1:5) {
+    group[[paste0("ret_lag", i)]] <- lag(group$ret, i)
+  }
+  group$ret_excess_lag1 <- lag(group$ret_excess, 1)
+  
+  # Past 20-day rolling stats
+  group <- group %>%
+    mutate(
+      skew_20d = rollapply(ret, width = 20, FUN = rolling_skew, 
+                          fill = NA, align = "right", partial = FALSE),
+      mean_20d = rollapply(ret, width = 20, FUN = mean, 
+                          na.rm = TRUE, fill = NA, align = "right"),
+      sd_20d = rollapply(ret, width = 20, FUN = sd, 
+                        na.rm = TRUE, fill = NA, align = "right")
+    )
+  
+  # Target: future 20-day entropy
+  group <- group %>%
+    mutate(
+      entropy_20d_forward = rollapply(lead(ret, 19), width = 20, 
+                                     FUN = rolling_entropy, 
+                                     fill = NA, align = "left")
+    )
+  
+  return(group)
+}
+
+# Apply to all firms
+df_features_entropy <- df %>%
+  group_by(permno) %>%
+  group_modify(~ make_entropy_features(.x)) %>%
+  ungroup() %>%
+  drop_na()
+
+# Save entropy features
+write_tsv(df_features_entropy, "../data/crsp_features_entropy.txt")
+cat("✅ Saved ../data/crsp_features_entropy.txt\n")
+```
+
+## Summary Statistics
+
+```{r summary-stats}
+cat("Volatility Features Dataset:\n")
+print(dim(df_features))
+cat("\nEntropy Features Dataset:\n")
+print(dim(df_features_entropy))
+
+cat("\nSample of Volatility Features:\n")
+print(head(df_features %>% select(permno, date, ret, sd_20d, vol_20d_forward)))
+
+cat("\nSample of Entropy Features:\n")
+print(head(df_features_entropy %>% select(permno, date, ret, sd_20d, entropy_20d_forward)))
+```
+
+## Distribution of Targets
+
+```{r target-distributions}
+p1 <- ggplot(df_features, aes(x = vol_20d_forward)) +
+  geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+  labs(title = "Distribution of 20-Day Forward Volatility",
+       x = "Volatility", y = "Count") +
+  theme_minimal()
+
+p2 <- ggplot(df_features_entropy, aes(x = entropy_20d_forward)) +
+  geom_histogram(bins = 50, fill = "darkorange", alpha = 0.7) +
+  labs(title = "Distribution of 20-Day Forward Entropy",
+       x = "Entropy (bits)", y = "Count") +
+  theme_minimal()
+
+# Display plots side by side
+library(gridExtra)
+grid.arrange(p1, p2, ncol = 2)
+```
+
+```{r correlation-analysis}
+# Calculate correlations for volatility dataset
+vol_cor <- cor(df_features %>% 
+                select(vol_20d_forward, ret_lag1, ret_excess_lag1, 
+                       skew_20d, mean_20d, sd_20d), 
+              use = "complete.obs")
+
+# Calculate correlations for entropy dataset
+entropy_cor <- cor(df_features_entropy %>% 
+                    select(entropy_20d_forward, ret_lag1, ret_excess_lag1, 
+                           skew_20d, mean_20d, sd_20d), 
+                  use = "complete.obs")
+
+cat("Correlation with Forward Volatility:\n")
+print(vol_cor[1, ])
+
+cat("\nCorrelation with Forward Entropy:\n")
+print(entropy_cor[1, ])
+```
+
